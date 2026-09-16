@@ -55,6 +55,8 @@ if task["status"] == "COMPLETED":
 ## 文档
 
 - **[SDK 接口文档](SDK_API.md)** —— 全部 15 个接口的请求/响应、枚举、状态机、幂等与错误码规范,以及完整的 Python 客户端示例。
+- **[API 交互式文档(Swagger UI)](swagger-ui.html)** —— OpenAPI 3.1 规范可视化,支持在线测试接口。
+- **[OpenAPI 规范(YAML)](openapi-sdk.yaml)** —— 可导入 Postman/Insomnia 或用于生成客户端代码。
 
 ## 支持与反馈
 

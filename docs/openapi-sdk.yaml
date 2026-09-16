@@ -1,0 +1,1110 @@
+openapi: 3.1.0
+info:
+  title: MatriQ Cloud SDK API
+  version: 1.0.0
+  description: |
+    MatriQ Cloud 面向 Python SDK / 第三方集成的公开接口文档。
+
+    **能力概览**:
+    - 认证: JWT 登录流(PAT 个人访问令牌在路线图中)
+    - 执行目标查询: 模拟器/QPU 目录、状态、可提交性、队列深度
+    - 任务提交: 幂等创建,支持 digital(门电路)与 analog(绝热演化)两类程序
+    - 任务查询: 列表(分页/筛选)、详情(状态/阶段/进度/等待原因)
+    - 任务操作与产物: 取消、日志、最终结果、结果下载
+
+    **Base URL**: `http://localhost:8000` (本地开发) / 生产地址待定
+
+    **完整文档**: https://zahi-zheng.github.io/matriq-docs/
+  contact:
+    name: MatriQ Cloud Support
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8000
+    description: 本地开发环境
+  - url: https://api.matriq.cloud
+    description: 生产环境(示例)
+
+tags:
+  - name: auth
+    description: 认证与会话管理
+  - name: devices
+    description: 执行目标(模拟器/QPU)查询
+  - name: tasks
+    description: 任务提交、查询、操作与产物
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: 登录取令牌
+      description: |
+        使用邮箱和密码登录,返回 access_token 和 refresh_token。
+
+        ⚠️ 当前开发环境:邮箱不存在会自动创建账号,生产化后将收紧。
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: demo@matriq.example
+              password: secret
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 账号已禁用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+              example:
+                detail: Account is disabled
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: 刷新令牌
+      description: |
+        使用 refresh_token 获取新的令牌对。旧 refresh_token 被撤销(轮换)。
+      operationId: refresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: 登出
+      description: 吊销该用户所有 refresh token,并使当前 access token 失效。
+      operationId: logout
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+              example:
+                code: 0
+                message: Logged out successfully
+                data: null
+                timestamp: 1760000000000
+
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: 当前用户信息
+      description: 返回当前认证用户的详情与权限列表。
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserWithPermissions'
+
+  /v1/devices:
+    get:
+      tags: [devices]
+      summary: 执行目标列表
+      description: |
+        返回所有执行目标(模拟器和 QPU),包含状态、可提交性、队列深度。
+
+        提交前应读取 `capabilities` 做客户端预检(modes/program_formats/max_qubits/max_shots)。
+      operationId: listDevices
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [simulator, qpu]
+          description: 过滤类型
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [STARTING, IDLE, BUSY, UNAVAILABLE, DRAINING, OFFLINE, PLANNED]
+          description: 过滤状态
+        - name: available
+          in: query
+          schema:
+            type: boolean
+          description: 过滤可提交性
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Device'
+
+  /v1/devices/{device_id}:
+    get:
+      tags: [devices]
+      summary: 单个目标详情
+      operationId: getDevice
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Device'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/devices/{device_id}/availability:
+    get:
+      tags: [devices]
+      summary: 目标可提交性
+      description: |
+        返回目标的可提交状态和预留时段(当前 `availability` 数组恒为空)。
+      operationId: getDeviceAvailability
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeviceAvailability'
+
+  /v1/tasks/validate:
+    post:
+      tags: [tasks]
+      summary: 提交前校验(不创建任务)
+      description: |
+        与任务提交使用完全相同的请求体,但不创建任务、不消耗配额。
+
+        SDK 应在提交前调用,用于表单期反馈。
+      operationId: validateTask
+      requestBody:
+        $ref: '#/components/requestBodies/TaskSubmission'
+      responses:
+        '200':
+          description: 校验通过
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TaskValidation'
+        '409':
+          description: 目标不可提交
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+              example:
+                detail: "Execution target sim-na-01 is OFFLINE and cannot accept tasks"
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /v1/tasks:
+    post:
+      tags: [tasks]
+      summary: 任务提交(幂等)
+      description: |
+        创建任务并返回任务 ID。
+
+        **幂等行为**(由 `Idempotency-Key` 头控制):
+        - 首次携带某 Key → 201,创建新任务
+        - 相同用户 + 相同 Key + 完全相同配置 → 200,返回原任务
+        - 相同用户 + 相同 Key + 任何字段不同 → 409,幂等冲突
+        - 不带 Key → 每次都创建新任务
+
+        **程序格式**:
+        - `digital` 单任务: `openqasm3` 或 `json`(单电路)
+        - `digital` 程序集: `json`(programs 数组,1-100 个电路)
+        - `digital` 混合作业: `json`(iterations/initial_angle)
+        - `analog`: `json`(canonical neutral-atom IR v1)
+      operationId: createTask
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description: 幂等键(强烈建议 SDK 总是携带)
+          example: 550e8400-e29b-41d4-a716-446655440000
+      requestBody:
+        $ref: '#/components/requestBodies/TaskSubmission'
+      responses:
+        '201':
+          description: 首次创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Task'
+        '200':
+          description: 幂等重放(返回已存在的任务)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Task'
+        '409':
+          description: 目标不可提交 / 幂等键冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+              examples:
+                target_unavailable:
+                  value:
+                    detail: "Execution target sim-na-01 is OFFLINE and cannot accept tasks"
+                idempotency_conflict:
+                  value:
+                    detail: 同一提交标识不能用于不同配置
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    get:
+      tags: [tasks]
+      summary: 任务列表查询
+      description: |
+        返回当前用户自己的任务列表(所有权隔离)。
+
+        `summary` 字段为当前用户全部任务的状态计数(不受筛选影响)。
+      operationId: listTasks
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/TaskType'
+        - name: device_id
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: 模糊匹配任务名或任务 ID
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TaskList'
+
+  /v1/tasks/{task_id}:
+    get:
+      tags: [tasks]
+      summary: 任务状态查询
+      description: |
+        SDK 轮询的主接口。
+
+        重点字段: `status`、`phase`、`progress`、`elapsed_seconds`、`attempt`、`waiting_reason`、`error`。
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/tasks/{task_id}/cancel:
+    post:
+      tags: [tasks]
+      summary: 取消任务
+      description: 对任何非终态任务(CREATED/QUEUED/RUNNING)可取消。
+      operationId: cancelTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 取消成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          status:
+                            type: string
+                            enum: [CANCELLED]
+        '409':
+          description: 任务已终态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+              example:
+                detail: Task is already terminal
+
+  /v1/tasks/{task_id}/logs:
+    get:
+      tags: [tasks]
+      summary: 任务执行日志
+      description: |
+        返回任务的执行日志。
+
+        当前返回全量已存数组,`has_more` 恒为 `false`,不支持时间/级别过滤与游标分页。
+      operationId: getTaskLogs
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TaskLogs'
+
+  /v1/tasks/{task_id}/results:
+    get:
+      tags: [tasks]
+      summary: 任务结果
+      description: |
+        仅 **COMPLETED** 任务可读。运行中不返回部分结果。
+
+        `output` 结构按模式(digital/analog)不同,详见 components/schemas/TaskResult。
+      operationId: getTaskResults
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/TaskResult'
+        '409':
+          description: 任务尚未完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+              example:
+                detail: 任务尚未完成
+        '404':
+          description: 任务不存在或无可用结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+  /v1/tasks/{task_id}/download:
+    get:
+      tags: [tasks]
+      summary: 结果下载(JSON 附件)
+      description: |
+        返回**不带信封**的原始 JSON,包含任务详情和结果。
+
+        响应头包含 `Content-Disposition: attachment; filename="task-<id>.json"`。
+      operationId: downloadTaskResults
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    $ref: '#/components/schemas/Task'
+                  output:
+                    type: object
+                    description: 结果 DTO,同 /results 接口的 data.output
+        '409':
+          description: 结果尚不可用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        使用 access_token(从 `/v1/auth/login` 或 `/v1/auth/refresh` 获取)。
+
+        示例: `Authorization: Bearer eyJhbGci...`
+
+  parameters:
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[a-z0-9-]+$
+      example: sim-na-01
+      description: 执行目标 ID(规范值如 sim-na-01..03)
+
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^task-[a-f0-9]{16}$
+      example: task-1a2b3c4d5e6f7a8b
+
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  requestBodies:
+    TaskSubmission:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TaskCreateRequest'
+          examples:
+            digital_bell_state:
+              summary: Digital 门电路(OpenQASM 3)
+              value:
+                name: bell-state-demo
+                description: SDK example
+                type: quantum_task
+                device_id: sim-na-01
+                program:
+                  type: openqasm3
+                  content: |
+                    OPENQASM 3.0;
+                    include "stdgates.inc";
+                    qubit[2] q;
+                    bit[2] c;
+                    h q[0];
+                    cx q[0], q[1];
+                    c = measure q;
+                parameters:
+                  mode: digital
+                  shots: 1000
+                tags: [sdk-demo]
+            analog_adiabatic:
+              summary: Analog 绝热演化(中性原子 IR v1)
+              value:
+                name: adiabatic-2atom
+                type: quantum_task
+                device_id: sim-na-01
+                program:
+                  type: json
+                  content: '{"ir_version":"1.0","kind":"neutral_atom.analog.adiabatic","geometry":{"unit":"um","positions":[[0.0,0.0],[8.0,0.0]]},"protocol":{"time_unit":"us","angular_frequency_unit":"rad/us","total_time_us":2.0,"n_steps":100,"omega_max_rad_per_us":10.0,"delta_global_initial_rad_per_us":-10.0,"delta_local_max_rad_per_us":10.0},"detuning_weights":{"0":1.0,"1":0.5},"backend":"qutip"}'
+                parameters:
+                  mode: analog
+                  shots: 1000
+
+  responses:
+    Unauthorized:
+      description: 未认证或令牌无效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorDetail'
+          example:
+            detail: Invalid token
+
+    NotFound:
+      description: 资源不存在(或不属于当前用户)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorDetail'
+          example:
+            detail: Task not found
+
+    ValidationError:
+      description: 请求体校验失败
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    loc:
+                      type: array
+                      items:
+                        oneOf:
+                          - type: string
+                          - type: integer
+                    msg:
+                      type: string
+                    input:
+                      type: object
+          example:
+            detail:
+              - type: greater_than_equal
+                loc: [body, parameters, shots]
+                msg: Input should be >= 100
+                input: 10
+
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      properties:
+        code:
+          type: integer
+          description: 业务码,成功恒为 0
+          example: 0
+        message:
+          type: string
+          description: 人类可读消息
+          example: success
+        data:
+          type: object
+          description: 业务载荷(接口各异)
+        timestamp:
+          type: integer
+          format: int64
+          description: 服务器 Unix 时间戳(毫秒)
+          example: 1760000000000
+
+    ErrorDetail:
+      type: object
+      properties:
+        detail:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_in:
+          type: integer
+          description: access_token 有效期(秒)
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatar:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [member, admin, owner]
+        tenant_id:
+          type: string
+          nullable: true
+        tenant_name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+
+    UserWithPermissions:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            permissions:
+              type: array
+              items:
+                type: string
+              example: [task:read, task:create, device:read]
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          example: sim-na-01
+        name:
+          type: string
+          example: Neutral Atom Simulator 01
+        type:
+          type: string
+          enum: [simulator, qpu]
+        status:
+          type: string
+          enum: [STARTING, IDLE, BUSY, UNAVAILABLE, DRAINING, OFFLINE, PLANNED]
+        available:
+          type: boolean
+        submittable:
+          type: boolean
+        capability_version:
+          type: string
+          example: neutral-atom-target.v1
+        capabilities:
+          type: object
+          properties:
+            modes:
+              type: array
+              items:
+                type: string
+                enum: [digital, analog]
+            program_formats:
+              type: array
+              items:
+                type: string
+            max_qubits:
+              type: integer
+            max_shots:
+              type: integer
+        queue:
+          type: object
+          properties:
+            running:
+              type: integer
+            waiting:
+              type: integer
+            healthy_workers:
+              type: integer
+
+    DeviceAvailability:
+      type: object
+      properties:
+        device_id:
+          type: string
+        status:
+          type: string
+        available:
+          type: boolean
+        submittable:
+          type: boolean
+        availability:
+          type: array
+          items:
+            type: object
+          description: 当前恒为空数组
+
+    TaskCreateRequest:
+      type: object
+      required: [name, type, device_id, program]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: \S
+        description:
+          type: string
+          maxLength: 2000
+          nullable: true
+        type:
+          $ref: '#/components/schemas/TaskType'
+        device_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-z0-9-]+$
+        program:
+          type: object
+          required: [type, content]
+          properties:
+            type:
+              type: string
+              enum: [openqasm3, json]
+            content:
+              type: string
+              minLength: 1
+              maxLength: 100000
+              description: |
+                OpenQASM 3 源码(type=openqasm3) 或 JSON 字符串(type=json)。
+
+                注意: JSON 程序必须先序列化为字符串再放入此字段。
+        parameters:
+          $ref: '#/components/schemas/TaskParameters'
+        tags:
+          type: array
+          items:
+            type: string
+          maxItems: 20
+
+    TaskParameters:
+      type: object
+      properties:
+        shots:
+          type: integer
+          minimum: 100
+          maximum: 10000
+          default: 1000
+        mode:
+          type: string
+          enum: [digital, analog]
+          default: digital
+        max_parallel:
+          type: integer
+          minimum: 1
+          maximum: 8
+          default: 1
+        timeout:
+          type: integer
+          minimum: 5
+          maximum: 10800
+          default: 1800
+          description: 单次执行超时(秒)
+        retry_policy:
+          type: string
+          enum: [none, retry_once, retry_twice, retry_three]
+          default: retry_once
+
+    TaskType:
+      type: string
+      enum: [quantum_task, program_set, hybrid_job]
+
+    TaskStatus:
+      type: string
+      enum: [CREATED, QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED]
+
+    TaskPhase:
+      type: string
+      enum: [QUEUED, VALIDATING, PREPARING, COMPILING, SIMULATING, SAMPLING, SERIALIZING, COMPLETED]
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        type:
+          $ref: '#/components/schemas/TaskType'
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        device_id:
+          type: string
+        device_name:
+          type: string
+        target_id:
+          type: string
+        shots:
+          type: integer
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        phase:
+          $ref: '#/components/schemas/TaskPhase'
+        phase_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        elapsed_seconds:
+          type: number
+          format: float
+        attempt:
+          type: integer
+          minimum: 0
+        waiting_reason:
+          type: string
+          nullable: true
+          enum: [null, WAITING_FOR_DISPATCH, TARGET_QUEUE, TARGET_BUSY, TARGET_OFFLINE, TARGET_DRAINING, TARGET_UNAVAILABLE]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_by:
+          type: string
+        created_by_name:
+          type: string
+        estimated_cost:
+          type: number
+          format: float
+        actual_cost:
+          type: number
+          format: float
+        program:
+          type: object
+          properties:
+            type:
+              type: string
+            content:
+              type: string
+            size:
+              type: integer
+        parameters:
+          type: object
+        resource_usage:
+          type: object
+        error:
+          type: string
+          nullable: true
+
+    TaskValidation:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        program_count:
+          type: integer
+        estimated_cost:
+          type: number
+          format: float
+        backend:
+          type: string
+        target_id:
+          type: string
+
+    TaskList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        summary:
+          type: object
+          description: 当前用户全部任务的状态计数(不受筛选影响)
+          properties:
+            queued:
+              type: integer
+            running:
+              type: integer
+            completed:
+              type: integer
+            failed:
+              type: integer
+            cancelled:
+              type: integer
+            total:
+              type: integer
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+    TaskLogs:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              level:
+                type: string
+                enum: [INFO, WARN, ERROR]
+              message:
+                type: string
+              source:
+                type: string
+        has_more:
+          type: boolean
+          description: 当前恒为 false
+        next_token:
+          type: string
+          nullable: true
+          description: 当前恒为 null
+
+    TaskResult:
+      type: object
+      properties:
+        status:
+          type: string
+        output:
+          type: object
+          description: |
+            结果 DTO,按模式不同:
+
+            - `digital`: 包含 `measurements`(bitstring counts)、`programs`、`shots`、`backend`
+            - `analog`: 包含 `observables`(occupations/times/final_occupation)、`sampling.performed=false`、`backend`
+        files:
+          type: array
+          items:
+            type: object
+          description: 当前恒为空数组
