@@ -1,6 +1,6 @@
 # MatriQ Cloud SDK 接口文档
 
-> - 版本:v1(对应后端 `main`,2026-09)
+> - 版本:v1(对应后端 `main`,2026-09-16)
 > - 读者:Python SDK 开发者、第三方集成方
 > - 权威声明:HTTP 方法、路径、请求/响应类型的唯一权威是 FastAPI 的 `/openapi.json`(交互浏览见 `/docs`)。本文是 SDK 集成视角的导读与约定,两者冲突时以 `/openapi.json` 为准。
 > - 业务规则的规范位置:OpenSpec(`openspec/specs/*`),本文同步其已实现部分。
