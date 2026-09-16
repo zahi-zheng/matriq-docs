@@ -1,0 +1,52 @@
+site_name: MatriQ Cloud SDK
+site_description: MatriQ Cloud 面向 SDK 集成方的接口文档
+site_url: https://zahi-zheng.github.io/matriq-docs/
+repo_url: https://github.com/zahi-zheng/matriq-docs
+repo_name: zahi-zheng/matriq-docs
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: 切换至深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: 切换至浅色模式
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search:
+      # lunr 无中文分词,借用 ja 的 CJK bigram 分词支持中文搜索
+      lang:
+        - en
+        - ja
+
+nav:
+  - 概述: index.md
+  - SDK 接口文档: SDK_API.md
