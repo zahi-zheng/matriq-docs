@@ -34,9 +34,9 @@ Web 控制台与 Python SDK **共用同一 `/v1` API**。SDK 当前可用的能�
 
 ## 2. 通用约定
 
-### 2.1 成功响应信封
+### 2.1 成功响应 Envelope
 
-所有成功响应使用统一信封:
+所有成功响应使用统一 Envelope 格式:
 
 ```json
 {
@@ -54,11 +54,11 @@ Web 控制台与 Python SDK **共用同一 `/v1` API**。SDK 当前可用的能�
 | `data` | object | 业务载荷,接口各异 |
 | `timestamp` | int | 服务器 Unix 时间戳(毫秒) |
 
-例外:`GET /v1/tasks/{task_id}/download` 返回**不带信封**的原始 JSON 附件(见 §6.15)。
+例外:`GET /v1/tasks/{task_id}/download` 返回**不带 Envelope** 的原始 JSON 附件(见 §6.15)。
 
 ### 2.2 错误响应
 
-错误**不使用信封**,沿用 FastAPI 结构:
+错误**不使用 Envelope**,沿用 FastAPI 标准结构:
 
 ```json
 { "detail": "任务尚未完成" }
@@ -138,9 +138,9 @@ OpenSpec `add-targeted-execution-platform/specs/api-credentials` 已定义 SDK �
 
 ## 4. 核心数据模型
 
-### 4.1 Task(任务视图)
+### 4.1 Task Schema
 
-所有任务接口的 `data`(或列表项)使用同一 `TaskView` 结构:
+所有任务接口的 `data`(或列表项)使用同一 Task schema:
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -208,7 +208,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 | `OFFLINE` | 无存活 Worker | 否 |
 | `PLANNED` | 规划中(如 `qpu-na-01`) | 否 |
 
-### 4.3 ExecutionTarget(设备视图)
+### 4.3 Device Schema
 
 ```json
 {
@@ -267,7 +267,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 | `email` | string | 必填 |
 | `password` | string | 必填 |
 
-**响应 200**(信封 `data`)
+**响应 200**(Envelope `data` 字段)
 
 ```json
 {
@@ -275,7 +275,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
   "refresh_token": "eyJhbGciOi...",
   "token_type": "Bearer",
   "expires_in": 3600,
-  "user": {
+  "user": {  // User schema
     "id": "user_1a2b3c4d5e6f7a8b",
     "email": "demo@matriq.example",
     "name": "demo",
@@ -311,7 +311,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 
 ### 6.4 当前用户 — `GET /v1/auth/me`
 
-**响应 200**:`data` 为用户视图(同登录的 `user`)+ `permissions` 数组(当前为静态值 `["task:read", "task:create", "device:read"]`,PAT 落地后将按凭据范围返回)。
+**响应 200**:`data` 为 User 对象(同登录的 `user`)+ `permissions` 数组(当前为静态值 `["task:read", "task:create", "device:read"]`,PAT 落地后将按 scope 返回)。
 
 ---
 
@@ -333,7 +333,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 
 ### 6.6 目标详情 — `GET /v1/devices/{device_id}`
 
-**响应 200**:`data` 为单个 TargetView(§4.3)。
+**响应 200**:`data` 为单个 Device 对象(§4.3)。
 
 **错误**:404 `Device not found`;401。
 
@@ -461,7 +461,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 
 **响应 201**(首次创建;幂等重放为 200,内容相同)
 
-`data` 为完整 TaskView(§4.1),创建瞬间典型值:
+`data` 为完整 Task schema(§4.1),创建瞬间典型值:
 
 ```json
 {
@@ -514,11 +514,11 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 | `device_id` | string | 如 `sim-na-01` |
 | `search` | string | 模糊匹配任务名或任务 ID |
 
-**响应 200**(`data`)
+**响应 200**(`data` 字段)
 
 ```json
 {
-  "items": [ "TaskView..." ],
+  "items": [ /* Task schema array */ ],
   "pagination": { "page": 1, "page_size": 20, "total": 42, "total_pages": 3 },
   "summary": { "queued": 2, "running": 1, "completed": 38, "failed": 1, "cancelled": 0, "total": 42 }
 }
@@ -530,7 +530,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 
 ### 6.11 任务状态查询 — `GET /v1/tasks/{task_id}`
 
-SDK 轮询的主接口。**响应 200**:`data` 为完整 TaskView,重点字段:`status`、`phase`、`progress`、`elapsed_seconds`、`attempt`、`waiting_reason`、`error`。
+SDK 轮询的主接口。**响应 200**:`data` 为完整 Task schema,重点字段:`status`、`phase`、`progress`、`elapsed_seconds`、`attempt`、`waiting_reason`、`error`。
 
 排队中的任务会根据目标实时状态解释等待原因,例如目标正忙时返回 `"waiting_reason": "TARGET_BUSY"`、`"progress": 0`。
 
@@ -587,7 +587,7 @@ SDK 轮询的主接口。**响应 200**:`data` 为完整 TaskView,重点字段:`
 
 `output` 按模式不同(完整示例见 §7.3);`files` 当前恒为空数组。
 
-**digital 输出**
+**Digital 输出 schema**
 
 ```json
 {
@@ -609,7 +609,7 @@ SDK 轮询的主接口。**响应 200**:`data` 为完整 TaskView,重点字段:`
 }
 ```
 
-**analog 输出**
+**Analog 输出 schema**
 
 ```json
 {
@@ -646,14 +646,14 @@ SDK 轮询的主接口。**响应 200**:`data` 为完整 TaskView,重点字段:`
 
 ### 6.15 结果下载 — `GET /v1/tasks/{task_id}/download`
 
-**响应 200**:不带信封的原始 JSON,带附件头:
+**响应 200**:不带 Envelope 的原始 JSON,带附件头:
 
 ```
 Content-Disposition: attachment; filename="task-<id>.json"
 ```
 
 ```json
-{ "task": { "TaskView...": "..." }, "output": { "结果 DTO,同 §6.14": "..." } }
+{ "task": { "Task schema...": "..." }, "output": { "结果 DTO,同 §6.14": "..." } }
 ```
 
 **错误**:409 `结果尚不可用`(未完成或无结果)。
