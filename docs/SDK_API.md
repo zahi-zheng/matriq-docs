@@ -47,6 +47,17 @@ SDK -- Bearer API Key -/
 
 本地开发和原始 HTTP 调试仍可显式使用地址；正式 SDK 的普通用户入口只要求平台生成的 `api_key`。
 
+### 1.3 路径命名和版本边界
+
+SDK 直接使用平台公共 API 的资源路径，不定义客户端专属 URL。`/v1` 是整套公共 HTTP 契约的主兼容版本，因此以后增加用户、计费或设备管理能力时，向后兼容的新接口仍位于同一个 `/v1` 下，而不是为每个模块分别建立版本：
+
+- 用户和凭据使用一级资源名，例如 `/v1/users`、规划中的 `/v1/api-keys`；
+- 计费领域使用 `/v1/billing/*` 分组，例如现有 `/v1/billing/invoices`、`/v1/billing/usage` 和 `/v1/billing/quotas`；
+- 设备使用 `/v1/devices` 资源及真实从属关系，例如 `/v1/devices/{device_id}/availability`；
+- 不增加 `/sdk/v1/*`、`/v1/user-module/*` 或 `/v1/getUserList` 等客户端、代码模块或方法名路径。
+
+新增业务能力本身不触发 `/v2`；只有无法向后兼容现有调用方的公共合同变化才评估新的主版本。完整命名规则见 [API 契约：路径和版本命名](API_CONTRACT.md#路径和版本命名)。这些示例只说明命名约定，SDK 当前实际公开的 operation 仍以权威 OpenAPI 的筛选视图和本文第 6、14 节为准。
+
 ---
 
 ## 2. 通用约定
