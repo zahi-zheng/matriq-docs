@@ -1,18 +1,28 @@
 openapi: 3.1.0
 info:
   title: MatriQ Cloud SDK API
-  version: 1.0.0
+  version: 1.0.0-planned
+  x-implementation-status: planned
   description: |
-    MatriQ Cloud 面向 Python SDK / 第三方集成的公开接口文档。
+    MatriQ Cloud 面向 Python SDK / 第三方集成的目标公开接口文档。
+
+    **实现状态**: API Key 管理和正式 Python SDK 尚未实现；当前运行时的 HTTP
+    方法、路径和字段仍以 FastAPI `/openapi.json` 为准。本文件固定已确认的 SDK
+    接入方式，不代表这些认证能力已经上线。
+
+    **架构边界**: 本文件是同一 FastAPI OpenAPI 面向 SDK 的筛选发布视图。
+    SDK 与 Web 调用相同的 `/v1` 业务 operation 和后端 use case；这里只排除
+    Web 会话、API Key 管理、管理员及内部端点，不定义 `/sdk/*` 平行 API。
 
     **能力概览**:
-    - 认证: JWT 登录流(PAT 个人访问令牌在路线图中)
+    - 认证: 用户只向 SDK 提供平台生成的 `api_key`，SDK 自动认证所有 API 调用
     - 执行目标查询: 模拟器/QPU 目录、状态、可提交性、队列深度
     - 任务提交: 幂等创建,支持 digital(门电路)与 analog(绝热演化)两类程序
     - 任务查询: 列表(分页/筛选)、详情(状态/阶段/进度/等待原因)
     - 任务操作与产物: 取消、日志、最终结果、结果下载
 
-    **Base URL**: `http://localhost:8000` (本地开发) / 生产地址待定
+    **Base URL**: 生产地址在 SDK 发布时固化到包内，普通用户不传 `base_url`；
+    `http://localhost:8000` 仅用于底层协议开发调试。
 
     **完整文档**: https://zahi-zheng.github.io/matriq-docs/
   contact:
@@ -22,121 +32,18 @@ info:
 
 servers:
   - url: http://localhost:8000
-    description: 本地开发环境
-  - url: https://api.matriq.cloud
-    description: 生产环境(示例)
+    description: 底层协议开发调试；正式 SDK 使用包内固化的官方地址
 
 tags:
-  - name: auth
-    description: 认证与会话管理
   - name: devices
     description: 执行目标(模拟器/QPU)查询
   - name: tasks
     description: 任务提交、查询、操作与产物
 
 security:
-  - BearerAuth: []
+  - ApiKeyAuth: []
 
 paths:
-  /v1/auth/login:
-    post:
-      tags: [auth]
-      summary: 登录取令牌
-      description: |
-        使用邮箱和密码登录,返回 access_token 和 refresh_token。
-
-        ⚠️ 当前开发环境:邮箱不存在会自动创建账号,生产化后将收紧。
-      operationId: login
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-            example:
-              email: demo@matriq.example
-              password: secret
-      responses:
-        '200':
-          description: 登录成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: 账号已禁用
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorDetail'
-              example:
-                detail: Account is disabled
-
-  /v1/auth/refresh:
-    post:
-      tags: [auth]
-      summary: 刷新令牌
-      description: |
-        使用 refresh_token 获取新的令牌对。旧 refresh_token 被撤销(轮换)。
-      operationId: refresh
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RefreshRequest'
-      responses:
-        '200':
-          description: 刷新成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /v1/auth/logout:
-    post:
-      tags: [auth]
-      summary: 登出
-      description: 吊销该用户所有 refresh token,并使当前 access token 失效。
-      operationId: logout
-      responses:
-        '200':
-          description: 登出成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessEnvelope'
-              example:
-                code: 0
-                message: Logged out successfully
-                data: null
-                timestamp: 1760000000000
-
-  /v1/auth/me:
-    get:
-      tags: [auth]
-      summary: 当前用户信息
-      description: 返回当前认证用户的详情与权限列表。
-      operationId: getCurrentUser
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessEnvelope'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/UserWithPermissions'
-
   /v1/devices:
     get:
       tags: [devices]
@@ -536,14 +443,15 @@ paths:
 
 components:
   securitySchemes:
-    BearerAuth:
+    ApiKeyAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+      bearerFormat: API Key
       description: |
-        使用 access_token(从 `/v1/auth/login` 或 `/v1/auth/refresh` 获取)。
+        用户只把平台生成的 `api_key` 交给正式 SDK；SDK 自动在所有受保护请求中携带该 Key。
+        用户不登录、不刷新令牌，也不手写认证 Header。
 
-        示例: `Authorization: Bearer eyJhbGci...`
+        底层协议示例: `Authorization: Bearer mq_key_...`
 
   parameters:
     DeviceId:
@@ -626,13 +534,13 @@ components:
 
   responses:
     Unauthorized:
-      description: 未认证或令牌无效
+      description: "`api_key` 缺失、无效、已更新或已撤销"
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorDetail'
           example:
-            detail: Invalid token
+            detail: Invalid API key
 
     NotFound:
       description: 资源不存在(或不属于当前用户)
@@ -705,81 +613,6 @@ components:
             - type: array
               items:
                 type: object
-
-    LoginRequest:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-
-    RefreshRequest:
-      type: object
-      required: [refresh_token]
-      properties:
-        refresh_token:
-          type: string
-
-    LoginResponse:
-      type: object
-      properties:
-        access_token:
-          type: string
-        refresh_token:
-          type: string
-        token_type:
-          type: string
-          enum: [Bearer]
-        expires_in:
-          type: integer
-          description: access_token 有效期(秒)
-        user:
-          $ref: '#/components/schemas/User'
-
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-        email:
-          type: string
-          format: email
-        name:
-          type: string
-        avatar:
-          type: string
-          nullable: true
-        role:
-          type: string
-          enum: [member, admin, owner]
-        tenant_id:
-          type: string
-          nullable: true
-        tenant_name:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        last_login:
-          type: string
-          format: date-time
-          nullable: true
-
-    UserWithPermissions:
-      allOf:
-        - $ref: '#/components/schemas/User'
-        - type: object
-          properties:
-            permissions:
-              type: array
-              items:
-                type: string
-              example: [task:read, task:create, device:read]
 
     Device:
       type: object
