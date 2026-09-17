@@ -1,20 +1,23 @@
 # MatriQ Cloud SDK 接口文档
 
-> - 版本:SDK 目标接入方案 v1(2026-09-17)
+> - 版本:v1(对应后端 `main`,2026-09-17)
 > - 读者:Python SDK 开发者、第三方集成方
-> - 权威声明:HTTP 方法、路径、请求/响应类型的唯一权威是 FastAPI 的 `/openapi.json`(交互浏览见 `/docs`)。本文是 SDK 集成视角的导读与约定,两者冲突时以 `/openapi.json` 为准。
-> - 业务规则的规范位置:OpenSpec(`openspec/specs/*`),本文同步已实现行为和已确认的目标接入约定。
-> - 实现状态:API Key 管理和正式 Python SDK 尚未实现；本文明确目标接入方式，当前 Web 控制台 JWT 不属于 SDK 接入契约。
+> - 权威声明:HTTP 方法、路径、请求/响应类型的唯一权威是 FastAPI 的 `/openapi.json`(交互浏览见 `/docs`)。本文与面向 SDK 的筛选发布视图 `openapi-sdk.yaml` 同步,冲突时以 `/openapi.json` 为准。
+> - 业务规则的规范位置:OpenSpec(`openspec/specs/*`),本文同步其已实现部分。
+
+> ⚠️ **实现状态**:API Key 管理与正式 Python SDK 尚未上线(`openapi-sdk.yaml` 标记 `x-implementation-status: planned`)。本文描述的是**已确认的 SDK 接入契约**;当前运行时的鉴权实现以 FastAPI `/openapi.json` 为准。
 
 ---
 
 ## 1. 概述
 
-Web 控制台与 Python SDK **共用同一 `/v1` API**。SDK 规划的公开能力面如下，其中 API Key 管理和正式 SDK 仍待实现:
+Web 控制台与 Python SDK **共用同一 `/v1` API**——相同的业务路径、请求/响应模型和后端 use case,仅在认证入口区分凭据类型。平台不为 SDK 提供 `/sdk/*` 平行路由。
+
+SDK 当前可用的能力面:
 
 | 能力 | 说明 |
 | --- | --- |
-| 认证 | 用户只提供平台生成的 `api_key`，SDK 自动完成所有 API 调用认证 |
+| 认证 | API Key:用户只向 SDK 提供 `api_key`,SDK 自动认证所有调用(§3) |
 | 执行目标查询 | 模拟器/QPU 目录、状态、可提交性、队列深度 |
 | 提交前校验 | 不创建任务,提前发现配置/程序/目标问题 |
 | 任务提交 | 幂等创建,支持 digital/analog 两类程序 |
@@ -22,41 +25,14 @@ Web 控制台与 Python SDK **共用同一 `/v1` API**。SDK 规划的公开能�
 | 任务操作 | 取消 |
 | 任务产物 | 日志、最终结果、结果下载 |
 
-### 1.1 Web 与 SDK 共用同一套业务 API
+**Base URL**
 
-SDK 不调用另一套后端，也不存在 `/sdk/*` 镜像业务路由。Web 与 SDK 都调用同一组已注册 `/v1` 路径、Pydantic DTO 和 application use case；区别只在进入业务路由前使用的凭据：
-
-```text
-Web -- Bearer JWT -----\
-                        +--> credential resolver --> Principal --> same /v1 route --> same use case
-SDK -- Bearer API Key -/
-```
-
-因此，通过 SDK 创建的任务可以在 Web 控制台中查看，Web 创建的任务也可以由同一用户通过 SDK 查询；两种入口共享权限、所有权、租户隔离、幂等、状态和错误语义。`/v1/auth/*`、API Key 管理、管理员及 Worker/Agent 内部端点属于控制台或内部接口，不进入 SDK 公开面。
-
-`openapi-sdk.yaml` 是权威 FastAPI `/openapi.json` 的目标筛选发布视图，只排除上述非 SDK 端点，不代表第二套 API 或第二份字段事实来源。
-
-### 1.2 Base URL
-
-| 环境 | 地址 |
+| 环境 | 说明 |
 | --- | --- |
-| 本地开发 | `http://localhost:8000` |
-| 生产 | 具体域名待网关确定；发布时固化在正式 SDK 内，普通用户无需传入 `base_url` |
+| 正式 SDK | 官方公共 API 地址**内置在 SDK 包内**,普通用户不传 `base_url` |
+| 协议开发调试 | `http://localhost:8000`,仅供底层联调 |
 
 所有接口都在 `/v1` 前缀下,请求/响应体均为 `application/json`。
-
-本地开发和原始 HTTP 调试仍可显式使用地址；正式 SDK 的普通用户入口只要求平台生成的 `api_key`。
-
-### 1.3 路径命名和版本边界
-
-SDK 直接使用平台公共 API 的资源路径，不定义客户端专属 URL。`/v1` 是整套公共 HTTP 契约的主兼容版本，因此以后增加用户、计费或设备管理能力时，向后兼容的新接口仍位于同一个 `/v1` 下，而不是为每个模块分别建立版本：
-
-- 用户和凭据使用一级资源名，例如 `/v1/users`、规划中的 `/v1/api-keys`；
-- 计费领域使用 `/v1/billing/*` 分组，例如现有 `/v1/billing/invoices`、`/v1/billing/usage` 和 `/v1/billing/quotas`；
-- 设备使用 `/v1/devices` 资源及真实从属关系，例如 `/v1/devices/{device_id}/availability`；
-- 不增加 `/sdk/v1/*`、`/v1/user-module/*` 或 `/v1/getUserList` 等客户端、代码模块或方法名路径。
-
-新增业务能力本身不触发 `/v2`；只有无法向后兼容现有调用方的公共合同变化才评估新的主版本。完整命名规则见 [API 契约：路径和版本命名](API_CONTRACT.md#路径和版本命名)。这些示例只说明命名约定，SDK 当前实际公开的 operation 仍以权威 OpenAPI 的筛选视图和本文第 6、14 节为准。
 
 ---
 
@@ -119,40 +95,55 @@ SDK 直接使用平台公共 API 的资源路径，不定义客户端专属 URL�
 
 ### 2.4 时间与 ID
 
-- 时间字段为 ISO 8601 UTC 字符串,如 `"2026-09-16T08:00:00+00:00"`(日志条目用 `"…Z"` 后缀,同为 UTC)。
+- 时间字段为 ISO 8601 UTC 字符串,如 `"2026-09-17T08:00:00+00:00"`(日志条目用 `"…Z"` 后缀,同为 UTC)。
 - 任务 ID 形如 `task-<16位hex>`;目标 ID 为规范 slug,如 `sim-na-01`。
 - 兼容别名:提交时 `device_id="simulator"` 会被服务端解析到 `sim-na-01`。SDK 应始终发送规范 ID,响应中也只出现规范 ID。
 
 ---
 
-## 3. SDK 鉴权:只使用 `api_key`
+## 3. 鉴权:API Key(SDK 唯一接入方式)
 
-### 3.1 唯一接入参数
+规范位置:OpenSpec `add-targeted-execution-platform/specs/api-credentials`。
 
-用户在平台 API Key 页面生成自己的 Key。使用正式 SDK 时只需传入这一个参数:
+### 3.1 API Key 生命周期
+
+| 环节 | 约定 |
+| --- | --- |
+| 生成 | 用户在控制台请求生成;高熵随机秘密,完整 Key 仅在生成响应中出现一次 |
+| 数量 | 每用户**最多一个当前 Key**;已有 Key 时再次打开 Key 页面只展示掩码,不创建第二个 |
+| 查看/复制 | 所有者可随时查看并复制当前完整 Key(服务端以可恢复加密保存材料 + 独立不可逆校验值),敏感操作被审计记录 |
+| 有效期 | 默认不设自动到期,持续有效直至被更新、撤销、所属账号禁用或权限收缩 |
+| 更换 | 原子生效:新 Key 返回那一刻起旧 Key 立即失效,**无刷新机制、无旧值宽限期** |
+| 撤销 | 所有者或有权管理员可撤销;撤销后所有使用该 Key 的请求失败 |
+| 审计 | 记录所有者、公开标识、生成/查看/更换/撤销和最后使用信息;任何日志/列表/错误响应**不得包含完整 Key** |
+
+**请求头格式**(SDK 自动携带,用户不手写):
+
+```
+Authorization: Bearer mq_key_...
+```
+
+### 3.2 权限边界
+
+- 每个 API Key 请求都校验所需权限(scope,如 `tasks:read`、`tasks:submit`);权限不足返回 403,不创建资源。
+- Key 的有效权限不得超过所有者当前可授予的权限;用户在 SDK 调用时**不需要**重复传入权限范围。
+- 账号被禁用后,旧 Key 立即失效,即使尚未到期或撤销。
+- API Key 与 Web 会话共享同一套资源所有权校验:Key 不能读取其他主体的任务,不因凭据类型而绕过隔离。
+
+### 3.3 SDK 初始化约定
+
+官方 Python SDK 的初始化**只有 `api_key` 一个接入参数**:
 
 ```python
 from matriq import MatriqClient
 
-client = MatriqClient(api_key="your_api_key")
+client = MatriqClient(api_key="mq_key_...")
 ```
 
-SDK 内置官方 API 地址，并自动用该 `api_key` 认证所有后续 API 请求。用户不需要提供 `base_url`、邮箱、密码、access token、refresh token 或手写认证 Header。
-
-### 3.2 API Key 生命周期
-
-- 每个用户只有一个当前 API Key，默认不自动过期；
-- 用户可以在平台页面随时查看和复制同一个完整 Key；
-- 点击“更新”后生成新 Key，旧 Key 立即失效；
-- 用户撤销 Key、账号被禁用或权限被收缩后，现有 Key 立即失效；
-- API Key 管理、完整值和服务端存储细节不进入普通 SDK API 调用。
-
-### 3.3 SDK 错误处理
-
-- Key 缺失、错误、已更新或已撤销时抛出 `AuthenticationError`；
-- Key 对目标操作没有权限时抛出 `PermissionDeniedError`；
-- SDK 不执行登录或 token 刷新，也不会在 401 后调用 Web 登录接口；
-- 日志、异常、`repr()` 和 notebook 输出不得包含完整 API Key。
+- 官方公共 API 地址内置在 SDK 包内,用户**不传** `base_url`;
+- SDK 不要求邮箱密码、Web token 或 refresh token;
+- 用户**不处理**令牌刷新(Key 无刷新机制,更换 Key 时用新 `api_key` 重新初始化);
+- SDK 在协议层自动携带 `Authorization: Bearer <api_key>`。
 
 ---
 
@@ -256,19 +247,23 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 
 ## 5. 接口总览
 
-| # | 方法 | 路径 | 用途 | 鉴权 |
-| --- | --- | --- | --- | --- |
-| 6.1 | GET | `/v1/devices` | 目标列表(筛选) | API Key |
-| 6.2 | GET | `/v1/devices/{device_id}` | 单目标详情 | API Key |
-| 6.3 | GET | `/v1/devices/{device_id}/availability` | 目标可提交性 | API Key |
-| 6.4 | POST | `/v1/tasks/validate` | 提交前校验(不创建) | API Key |
-| 6.5 | POST | `/v1/tasks` | **任务提交(幂等)** | API Key |
-| 6.6 | GET | `/v1/tasks` | 任务列表查询 | API Key |
-| 6.7 | GET | `/v1/tasks/{task_id}` | **任务状态查询** | API Key |
-| 6.8 | POST | `/v1/tasks/{task_id}/cancel` | 取消任务 | API Key |
-| 6.9 | GET | `/v1/tasks/{task_id}/logs` | 执行日志 | API Key |
-| 6.10 | GET | `/v1/tasks/{task_id}/results` | 最终结果 | API Key |
-| 6.11 | GET | `/v1/tasks/{task_id}/download` | 结果下载(JSON 附件) | API Key |
+所有接口要求 `Authorization: Bearer <api_key>`(SDK 自动携带)。
+
+| # | 方法 | 路径 | 用途 |
+| --- | --- | --- | --- |
+| 6.1 | GET | `/v1/devices` | 目标列表(筛选) |
+| 6.2 | GET | `/v1/devices/{device_id}` | 单目标详情 |
+| 6.3 | GET | `/v1/devices/{device_id}/availability` | 目标可提交性 |
+| 6.4 | POST | `/v1/tasks/validate` | 提交前校验(不创建) |
+| 6.5 | POST | `/v1/tasks` | **任务提交(幂等)** |
+| 6.6 | GET | `/v1/tasks` | 任务列表查询 |
+| 6.7 | GET | `/v1/tasks/{task_id}` | **任务状态查询** |
+| 6.8 | POST | `/v1/tasks/{task_id}/cancel` | 取消任务 |
+| 6.9 | GET | `/v1/tasks/{task_id}/logs` | 执行日志 |
+| 6.10 | GET | `/v1/tasks/{task_id}/results` | 最终结果 |
+| 6.11 | GET | `/v1/tasks/{task_id}/download` | 结果下载(JSON 附件) |
+
+> Web 会话端点(`/v1/auth/*`)、API Key 管理端点不属于 SDK 契约,见 §14。
 
 ---
 
@@ -284,9 +279,9 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 | `status` | string | 过滤状态,取值见 §4.2 设备状态 |
 | `available` | bool | 过滤可提交性 |
 
-**响应 200**:`data = { "items": [TargetView, ...] }`,按目标 ID 排序,含规划中的 QPU(如 `qpu-na-01`,仅展示 `PLANNED`/`submittable=false`)。
+**响应 200**:`data = { "items": [Device schema, ...] }`,按目标 ID 排序,含规划中的 QPU(如 `qpu-na-01`,仅展示 `PLANNED`/`submittable=false`)。
 
-**典型错误**:401 未认证。
+**典型错误**:401 API Key 缺失或无效。
 
 ---
 
@@ -358,7 +353,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 
 | Header | 必填 | 说明 |
 | --- | --- | --- |
-| `Authorization: Bearer <api_key>` | 是 | SDK 内部自动携带，普通用户无需手写 |
+| `Authorization: Bearer <api_key>` | 是 | SDK 自动携带 |
 | `Idempotency-Key` | 否 | 1–100 字符;强烈建议 SDK 总是携带,见 §9 |
 | `Content-Type: application/json` | 是 | |
 
@@ -436,7 +431,7 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
     "shots": 1000,
     "progress": 0,
     "phase": "QUEUED",
-    "phase_started_at": "2026-09-16T08:00:00+00:00",
+    "phase_started_at": "2026-09-17T08:00:00+00:00",
     "elapsed_seconds": 0.0,
     "attempt": 0,
     "waiting_reason": "WAITING_FOR_DISPATCH",
@@ -454,13 +449,13 @@ QUEUED → VALIDATING → PREPARING → COMPILING → SIMULATING → SAMPLING �
 | 422 | 请求体校验失败 / 未知目标 / 能力不匹配 / 程序不合法(同 §6.4) |
 | 409 | 目标不可提交(离线、维护、自检失败、规划中) |
 | 409 | `同一提交标识不能用于不同配置`(幂等键冲突,见 §9) |
-| 401 | 未认证 |
+| 401 | API Key 缺失、无效、已更换或已撤销 |
 
 ---
 
 ### 6.6 任务列表查询 — `GET /v1/tasks`
 
-仅返回**当前用户自己的任务**(所有权隔离)。
+仅返回**当前 Key 所有者自己的任务**(所有权隔离)。
 
 **查询参数**
 
@@ -497,7 +492,7 @@ SDK 轮询的主接口。**响应 200**:`data` 为完整 Task schema,重点字�
 
 ---
 
-### 6.8 取消任务 — `POST /v1/tasks/{task_id}` `/cancel`
+### 6.8 取消任务 — `POST /v1/tasks/{task_id}/cancel`
 
 对任何非终态任务(CREATED/QUEUED/RUNNING)可取消。
 
@@ -519,7 +514,7 @@ SDK 轮询的主接口。**响应 200**:`data` 为完整 Task schema,重点字�
 {
   "logs": [
     {
-      "timestamp": "2026-09-16T08:00:00Z",
+      "timestamp": "2026-09-17T08:00:00Z",
       "level": "INFO",
       "message": "CREATED:任务配置已保存,等待调度",
       "source": "execution-runtime"
@@ -544,7 +539,7 @@ SDK 轮询的主接口。**响应 200**:`data` 为完整 Task schema,重点字�
 { "status": "completed", "output": { }, "files": [] }
 ```
 
-`output` 按模式不同(完整示例见 §7.3);`files` 当前恒为空数组。
+`output` 按模式不同(完整示例见本节末尾);`files` 当前恒为空数组。
 
 **Digital 输出 schema**
 
@@ -729,29 +724,22 @@ stateDiagram-v2
 | --- | --- | --- |
 | 200 | 幂等重放 / 常规成功 | 正常解析 |
 | 201 | 首次创建 | 正常解析 |
-| 401 | `api_key` 缺失、无效、已更新或已撤销 | 不自动登录或刷新，抛出 `AuthenticationError` |
-| 403 | API Key 权限不足 | 不可重试,提示用户 |
+| 401 | API Key 缺失、无效、已更换或已撤销 | 提示用户重新生成/更新 Key;不可自动重试 |
+| 403 | 权限不足(Key scope 不含所需权限,或角色/账号受限) | 不可重试,提示用户 |
 | 404 | 资源不存在**或不属于当前用户** | 不可重试;不要向用户暴露"他人任务存在" |
 | 409 | 目标不可提交 / 幂等键冲突 / 任务已终态 / 结果未就绪 | 读 `detail` 分类处理 |
-| 422 | 请求校验失败 / 程序不合法 / 能力不匹配 | 不可重试,修正输入后使用新的 `Idempotency-Key` 重新提交 |
+| 422 | 请求校验失败 / 程序不合法 / 能力不匹配 | 不可重试,修正输入后重新提交(新 Key) |
 | 5xx | 服务端错误 | 指数退避重试(幂等接口安全) |
 
 ---
 
 ## 11. SDK 客户端设计建议
 
-SDK 的唯一初始化方式:
-
-```python
-from matriq import MatriqClient
-
-client = MatriqClient(api_key="your_api_key")
-```
-
-官方 API 地址由 SDK 内置，所有方法都复用初始化时提供的 `api_key`。推荐的方法到接口映射:
+初始化只有 `api_key` 一个参数(§3.3),推荐的方法到接口映射:
 
 | SDK 方法 | HTTP | 备注 |
 | --- | --- | --- |
+| `MatriqClient(api_key=…)` | — | 官方地址内置;Key 更换后用新 Key 重新初始化 |
 | `list_targets(type=None, status=None)` | GET `/v1/devices` | 提交前读 capabilities 预检 |
 | `get_target(target_id)` | GET `/v1/devices/{id}` | |
 | `validate(spec)` | POST `/v1/tasks/validate` | 表单期即调 |
@@ -761,22 +749,20 @@ client = MatriqClient(api_key="your_api_key")
 | `cancel_task(task_id)` | POST `/v1/tasks/{id}/cancel` | |
 | `get_logs(task_id)` | GET `/v1/tasks/{id}/logs` | |
 | `get_result(task_id)` | GET `/v1/tasks/{id}/results` | 仅 COMPLETED;409 需转义为特定异常 |
-| `download_result(task_id)` | GET `/v1/tasks/{id}/download` | 注意响应无信封 |
+| `download_result(task_id)` | GET `/v1/tasks/{id}/download` | 注意响应无 Envelope |
 | `wait(task_id, timeout=None, poll_interval=…)` | 轮询 `get_task` | 终态返回 Task;超时抛 `TaskTimeoutError` |
 
-异常类型建议:`AuthenticationError`(401)、`PermissionDeniedError`(403)、`NotFoundError`(404)、`ConflictError`(409,携带子类型:TARGET_UNAVAILABLE / IDEMPOTENCY_MISMATCH / TASK_TERMINAL / RESULT_NOT_READY)、`ValidationError`(422,携带字段定位)、`TaskFailedError`(终态 FAILED,携带 `error`)。
+异常类型建议:`AuthenticationError`(401,提示更换 Key)、`PermissionDeniedError`(403)、`NotFoundError`(404)、`ConflictError`(409,携带子类型:TARGET_UNAVAILABLE / IDEMPOTENCY_MISMATCH / TASK_TERMINAL / RESULT_NOT_READY)、`ValidationError`(422,携带字段定位)、`TaskFailedError`(终态 FAILED,携带 `error`)。
 
 ---
 
 ## 12. 端到端示例
 
-### 12.1 curl + API Key
-
-本节仅用于底层协议调试；正式 SDK 用户不需要设置 `BASE` 或手写认证 Header。生产域名确认后再替换环境变量值。
+### 12.1 curl
 
 ```bash
-BASE="${MATRIQ_API_BASE_URL:?set MATRIQ_API_BASE_URL}"
-API_KEY=your_api_key
+BASE=http://localhost:8000
+API_KEY=mq_key_...
 
 # 1. 查询目标
 curl -s $BASE/v1/devices -H "Authorization: Bearer $API_KEY"
@@ -799,41 +785,36 @@ curl -s $BASE/v1/tasks/task-1a2b3c4d5e6f7a8b/results \
   -H "Authorization: Bearer $API_KEY"
 ```
 
-### 12.2 SDK 底层请求示意
-
-下面代码说明 SDK 如何在内部复用同一个 `api_key`；这是 SDK 实现示意，用户不需要自己编写。
+### 12.2 Python(requests)
 
 ```python
 import time
 import uuid
 import requests
 
-from ._config import OFFICIAL_API_BASE_URL  # 包内常量，发布时固化
-
 
 class MatriqClient:
-    _API_BASE = OFFICIAL_API_BASE_URL
+    """SDK 契约参考实现:初始化只有 api_key 一个接入参数。"""
 
-    def __init__(self, api_key: str):
-        if not api_key:
-            raise ValueError("api_key is required")
-        self._session = requests.Session()
-        self._session.headers["Authorization"] = f"Bearer {api_key}"
+    def __init__(self, api_key: str, base_url: str = "https://api.matriq.cloud"):
+        # 正式 SDK 将官方地址固化在包内;此处保留 base_url 仅为协议联调
+        self.base = base_url.rstrip("/")
+        self.session = requests.Session()
+        self.session.headers["Authorization"] = f"Bearer {api_key}"
 
     def get(self, path: str, **kwargs):
-        return self._request("GET", path, **kwargs)
+        resp = self.session.get(f"{self.base}{path}", **kwargs)
+        resp.raise_for_status()
+        return resp.json()["data"]
 
     def post(self, path: str, **kwargs):
-        return self._request("POST", path, **kwargs)
-
-    def _request(self, method: str, path: str, **kwargs):
-        resp = self._session.request(method, f"{self._API_BASE}{path}", **kwargs)
+        resp = self.session.post(f"{self.base}{path}", **kwargs)
         resp.raise_for_status()
         return resp.json()["data"]
 
 
 def main() -> None:
-    client = MatriqClient(api_key="your_api_key")
+    client = MatriqClient(api_key="mq_key_...")   # 控制台生成的 API Key
 
     task = client.post(
         "/v1/tasks",
@@ -872,38 +853,13 @@ if __name__ == "__main__":
     main()
 ```
 
-### 12.3 正式 SDK 用法
-
-用户先在平台 API Key 页面生成并复制自己的 Key，随后只需导入 SDK 并传入 `api_key`:
-
-```python
-from matriq import MatriqClient
-
-api_key = "your_api_key"
-client = MatriqClient(api_key=api_key)
-
-for target in client.list_targets():
-    print(target)
-```
-
-实际项目可从环境变量读取，避免把完整 Key 提交到源码仓库:
-
-```python
-import os
-from matriq import MatriqClient
-
-client = MatriqClient(api_key=os.environ["MATRIQ_API_KEY"])
-```
-
-控制台对每个用户只维护一个当前 Key。用户可随时显示或复制；点击“更新”后旧 Key 立即失效，已有脚本必须替换为新值。
-
 ---
 
 ## 13. 当前限制与路线图
 
 | 项 | 当前状态 | 计划 |
 | --- | --- | --- |
-| SDK 鉴权 | API Key 管理与正式 SDK 尚未实现 | 每用户一个可找回、默认长期有效的 API Key；SDK 内置官方地址，初始化和调用只依赖 `api_key` |
+| SDK 鉴权 | **API Key 契约已确认**(§3);Key 管理控制台与官方 SDK 尚未上线 | 控制台 Key 管理 → API Key 认证入口 → SDK 发布(OpenSpec `api-credentials`) |
 | 任务状态推送 | 仅轮询 | WebSocket 广播暂不承诺 |
 | 结果流式 | 完成后才可读,无部分 occupation/samples | 后续里程碑评估 |
 | 日志接口 | 全量数组,`has_more=false` | 时间/级别过滤、游标分页 |
@@ -916,7 +872,8 @@ client = MatriqClient(api_key=os.environ["MATRIQ_API_KEY"])
 
 以下接口是控制台/运维专用,**SDK 不得依赖**(随时变更且不走兼容承诺):
 
-- `/v1/auth/login`、`/v1/auth/refresh`、`/v1/auth/logout`、`/v1/auth/me` — Web 控制台会话，SDK 不登录或刷新 token
+- `/v1/auth/*`(login / refresh / logout / me)— Web 浏览器会话;SDK 一律使用 API Key(§3),不得复用 Web 登录流
+- API Key 管理端点 — 用户经控制台操作 Key,SDK 不提供 Key 管理方法
 - `/v1/users*`、`/v1/admin/*` — 用户与管理后台
 - `/v1/notebooks*` — Notebook 原型(内存态)
 - `/v1/billing/*` — 账单原型(空实现)
