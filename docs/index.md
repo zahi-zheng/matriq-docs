@@ -52,7 +52,7 @@ if task["status"] == "COMPLETED":
     print(result["output"]["measurements"])
 ```
 
-SDK 初始化只有 `api_key` 一个接入参数——不传 `base_url`、不用邮箱密码、不处理令牌刷新。详见 [鉴权章节](SDK_API.md/#3-鉴权api-key-sdk-唯一接入方式)。
+SDK 初始化只有 `api_key` 一个接入参数——不传 `base_url`、不用邮箱密码、不处理令牌刷新。详见 [鉴权章节](SDK_API.md)。
 
 ## 文档
 
