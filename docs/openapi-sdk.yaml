@@ -1,14 +1,9 @@
 openapi: 3.1.0
 info:
   title: MatriQ Cloud SDK API
-  version: 1.0.0-planned
-  x-implementation-status: planned
+  version: 1.0.0
   description: |
-    MatriQ Cloud 面向 Python SDK / 第三方集成的目标公开接口文档。
-
-    **实现状态**: API Key 管理和正式 Python SDK 尚未实现；当前运行时的 HTTP
-    方法、路径和字段仍以 FastAPI `/openapi.json` 为准。本文件固定已确认的 SDK
-    接入方式，不代表这些认证能力已经上线。
+    MatriQ Cloud 面向 Python SDK / 第三方集成的公开接口文档。
 
     **架构边界**: 本文件是同一 FastAPI OpenAPI 面向 SDK 的筛选发布视图。
     SDK 与 Web 调用相同的 `/v1` 业务 operation 和后端 use case；这里只排除

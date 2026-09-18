@@ -5,8 +5,6 @@
 > - 权威声明:HTTP 方法、路径、请求/响应类型的唯一权威是 FastAPI 的 `/openapi.json`(交互浏览见 `/docs`)。本文与面向 SDK 的筛选发布视图 `openapi-sdk.yaml` 同步,冲突时以 `/openapi.json` 为准。
 > - 业务规则的规范位置:OpenSpec(`openspec/specs/*`),本文同步其已实现部分。
 
-> ⚠️ **实现状态**:API Key 管理与正式 Python SDK 尚未上线(`openapi-sdk.yaml` 标记 `x-implementation-status: planned`)。本文描述的是**已确认的 SDK 接入契约**;当前运行时的鉴权实现以 FastAPI `/openapi.json` 为准。
-
 ---
 
 ## 1. 概述
@@ -859,7 +857,7 @@ if __name__ == "__main__":
 
 | 项 | 当前状态 | 计划 |
 | --- | --- | --- |
-| SDK 鉴权 | **API Key 契约已确认**(§3);Key 管理控制台与官方 SDK 尚未上线 | 控制台 Key 管理 → API Key 认证入口 → SDK 发布(OpenSpec `api-credentials`) |
+| SDK 鉴权 | API Key 契约已确认(§3) | 控制台 Key 管理 → API Key 认证入口 → SDK 发布(OpenSpec `api-credentials`) |
 | 任务状态推送 | 仅轮询 | WebSocket 广播暂不承诺 |
 | 结果流式 | 完成后才可读,无部分 occupation/samples | 后续里程碑评估 |
 | 日志接口 | 全量数组,`has_more=false` | 时间/级别过滤、游标分页 |
