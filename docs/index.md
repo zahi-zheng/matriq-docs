@@ -2,8 +2,6 @@
 
 MatriQ Cloud 是面向中性原子(Neutral Atom)量子计算任务的云平台。本站点提供 **Python SDK / 第三方集成** 所需的公开接口文档。
 
-> **实现状态**:API Key 管理与正式 Python SDK 尚未上线。本站点描述的是已确认的 SDK 接入契约(`x-implementation-status: planned`);当前运行时的 HTTP 行为以 FastAPI `/openapi.json` 为准。
-
 ## 能力概览
 
 | 能力 | 说明 |
