@@ -1,6 +1,6 @@
 # MatriQ Cloud SDK 接口文档
 
-> - 版本:v1(对应后端 `main`,2026-09-17)
+> - 版本:v1(对应后端 `main`,2026-09-18)
 > - 读者:Python SDK 开发者、第三方集成方
 > - 权威声明:HTTP 方法、路径、请求/响应类型的唯一权威是 FastAPI 的 `/openapi.json`(交互浏览见 `/docs`)。本文与面向 SDK 的筛选发布视图 `openapi-sdk.yaml` 同步,冲突时以 `/openapi.json` 为准。
 > - 业务规则的规范位置:OpenSpec(`openspec/specs/*`),本文同步其已实现部分。
@@ -11,17 +11,14 @@
 
 Web 控制台与 Python SDK **共用同一 `/v1` API**——相同的业务路径、请求/响应模型和后端 use case,仅在认证入口区分凭据类型。平台不为 SDK 提供 `/sdk/*` 平行路由。
 
-SDK 当前可用的能力面:
+Cloud 当前已对 API Key 开放的 SDK 能力面:
 
 | 能力 | 说明 |
 | --- | --- |
 | 认证 | API Key:用户只向 SDK 提供 `api_key`,SDK 自动认证所有调用(§3) |
-| 执行目标查询 | 模拟器/QPU 目录、状态、可提交性、队列深度 |
-| 提交前校验 | 不创建任务,提前发现配置/程序/目标问题 |
-| 任务提交 | 幂等创建,支持 digital/analog 两类程序 |
-| 任务查询 | 列表(分页/筛选)、详情(状态/阶段/进度/等待原因) |
-| 任务操作 | 取消 |
-| 任务产物 | 日志、最终结果、结果下载 |
+| 执行目标查询 | `GET /v1/devices` 与 `GET /v1/devices/{device_id}`；需要 `devices:read` |
+
+本文后续的任务校验、提交、查询、取消和结果章节保留目标合同，但当前 Cloud 运行时尚未向 API Key 开放这些 operation；它们仍只接受 Web JWT，不能因路径已存在或 `openapi-sdk.yaml` 已描述而视为 SDK 可用。API Key 也不能调用 `/v1/devices/{device_id}/availability`。当前 SDK audience 以 FastAPI `/openapi.json` 中 `x-audience` 包含 `sdk` 的 operation 为准，恰为上述两个设备查询接口。
 
 **Base URL**
 
@@ -123,6 +120,7 @@ Authorization: Bearer mq_key_...
 
 ### 3.2 权限边界
 
+- 当前 Cloud 生成的 Key 固定只含 `devices:read`;其他 scope 是后续 permission matrix 的目标合同。
 - 每个 API Key 请求都校验所需权限(scope,如 `tasks:read`、`tasks:submit`);权限不足返回 403,不创建资源。
 - Key 的有效权限不得超过所有者当前可授予的权限;用户在 SDK 调用时**不需要**重复传入权限范围。
 - 账号被禁用后,旧 Key 立即失效,即使尚未到期或撤销。
@@ -857,7 +855,7 @@ if __name__ == "__main__":
 
 | 项 | 当前状态 | 计划 |
 | --- | --- | --- |
-| SDK 鉴权 | API Key 契约已确认(§3) | 控制台 Key 管理 → API Key 认证入口 → SDK 发布(OpenSpec `api-credentials`) |
+| SDK 鉴权 | Cloud 已实现 Key 生命周期和设备列表/详情的 `devices:read`；SDK 位于独立项目 | 后续按 permission matrix 开放任务/结果 operation(OpenSpec `api-credentials`) |
 | 任务状态推送 | 仅轮询 | WebSocket 广播暂不承诺 |
 | 结果流式 | 完成后才可读,无部分 occupation/samples | 后续里程碑评估 |
 | 日志接口 | 全量数组,`has_more=false` | 时间/级别过滤、游标分页 |
